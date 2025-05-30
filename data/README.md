@@ -1,0 +1,2 @@
+# FIRE Data
++ The data within FIRE_example are a small part of the [FIRE - Fundus Image Registration Dataset](https://projects.ics.forth.gr/cvrl/fire/). I did not use the full dataset since github is only able to upload 100MB data and the coursera development server (where I developed and run my code) could not wget data from anywhere. So this was the only possability to get some data to develop the application.
