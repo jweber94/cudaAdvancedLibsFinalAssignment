@@ -44,6 +44,10 @@ public:
         }
 
         // Do Fourrier Transform
+        if (0 != calculateCrossCorrelation(pImgGPU, pImgGPU, img.rows, img.cols)) {
+            std::cerr << "Could not do the fourrier transformation" << std::endl;
+            return false;
+        }
 
         // Calculate Cross-Correllation
 
@@ -93,7 +97,7 @@ private:
             return nullptr; // Vereinfachung für dieses Beispiel
         }
 
-        // convert greyscale data to cufftComplex
+        // convert greyscale data to cufftComplex - we could do this on GPU in order to copy less data from CPU to GPU but for the sake on simplicity we do the conversion on CPU
         size_t num_pixels = imgData.total();
         std::vector<cufftComplex> host_complex_buffer(num_pixels);
         const uint8_t *img_ptr = imgData.ptr<uint8_t>(0); // get pointer to the raw greyscale data on CPU cv::Mat
@@ -113,6 +117,7 @@ private:
             return nullptr;
         }
 
+        // copy data to GPU
         err = cudaMemcpy(d_complex_image, host_complex_buffer.data(), complex_image_bytes, cudaMemcpyHostToDevice);
         if (cudaError::cudaSuccess != err)
         {
@@ -120,12 +125,53 @@ private:
             cudaFree(d_complex_image); // avoid memory leak on GPU
             return nullptr;
         }
-
         return d_complex_image;
     }
 
-    std::string generateNewNameFromPath(const std::string &path)
+    int calculateCrossCorrelation(cufftComplex *img1, cufftComplex * img2, int rows, int cols) {
+        auto pfrequencySpaceImg1 = perform2DFFT(img1, rows, cols);
+        auto pfrequencySpaceImg2 = perform2DFFT(img2, rows, cols);
+
+        cudaFree(pfrequencySpaceImg1);
+        cudaFree(pfrequencySpaceImg2);
+        return 0;
+    }
+
+    cufftComplex *perform2DFFT(cufftComplex *input_gpu_data, int rows, int cols)
     {
+        if (!input_gpu_data) {
+            std::cerr << "Received nullptr - can not do a fourrier transform" << std::endl;
+            return nullptr;
+        }
+
+        // create a plan for the transformation
+        long long n[2]; // 2D fourrier transform
+        n[0] = rows;
+        n[1] = cols;
+        cufftHandle plan;
+        cufftPlan2d(&plan, n[0], n[1], CUFFT_R2C);
+        
+        // allocate memory for the result
+        int complex_output_cols = cols / 2 + 1;
+        cufftComplex *d_fft_output = nullptr;
+        size_t fft_output_bytes = rows * complex_output_cols * sizeof(cufftComplex);
+        if (cudaError::cudaSuccess != cudaMalloc((void **)&d_fft_output, fft_output_bytes)) {
+            std::cerr << "Could not allocate memory for the result of the fourrier transform" << std::endl;
+            return nullptr;
+        }
+
+        // do the actual transformation to frquence space
+        cufftExecR2C(plan, (cufftReal *)input_gpu_data, d_fft_output);
+        
+        // wait for the fourrier transform to be fully executed on device
+        cudaDeviceSynchronize();
+        
+        // clean up the space
+        cufftDestroy(plan);
+        return d_fft_output; // Gib den Zeiger auf die komplexen FFT-Ergebnisse zurück
+    }
+
+    std::string generateNewNameFromPath(const std::string &path) {
         size_t lastSlash = path.rfind('/');
         std::string nameWithPath = (lastSlash == std::string::npos) ? path : path.substr(lastSlash + 1);
         size_t lastDot = nameWithPath.rfind('.');
