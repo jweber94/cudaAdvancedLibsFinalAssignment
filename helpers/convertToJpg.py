@@ -4,9 +4,9 @@ import sys
 from PIL import Image
 import numpy as np
 
-def pgm_folder_to_png(input_folder):
+def pgm_folder_to_jpg(input_folder):
     """
-    Converts all PGM files in a folder to PNG files.
+    Converts all PGM files in a folder to JPG files.
 
     Args:
         input_folder (str): The path to the input folder containing PGM files.
@@ -26,8 +26,8 @@ def pgm_folder_to_png(input_folder):
     for pgm_file_name in pgm_files:
         pgm_path = os.path.join(input_folder, pgm_file_name)
         base_name, _ = os.path.splitext(pgm_file_name)
-        png_file_name = base_name + ".png"
-        png_path = os.path.join(input_folder, png_file_name)
+        jpg_file_name = base_name + ".jpg"
+        jpg_path = os.path.join(input_folder, jpg_file_name)
 
         try:
             # Open the PGM image in binary read mode
@@ -59,13 +59,14 @@ def pgm_folder_to_png(input_folder):
                 # Reshape the data into a 2D array
                 image_array = image_data.reshape((height, width))
 
-            # Create a PIL Image from the NumPy array
-            img = Image.fromarray(image_array)
+            # Create a PIL Image from the NumPy array (PGM ist immer Graustufen, also 'L' mode)
+            img = Image.fromarray(image_array, mode='L') # Explizit 'L' für Graustufen
 
-            # Save the image as PNG
-            img.save(png_path)
+            # Save the image as JPG
+            # Beachte: JPG unterstützt keine Transparenz und kann Kompression anwenden.
+            img.save(jpg_path)
 
-            print(f"Converted: '{pgm_file_name}' -> '{png_file_name}'")
+            print(f"Converted: '{pgm_file_name}' -> '{jpg_file_name}'")
 
         except FileNotFoundError:
             print(f"Error: The file '{pgm_path}' was not found (should not happen).")
@@ -80,4 +81,4 @@ if __name__ == "__main__":
         sys.exit(1)
 
     input_folder_path = sys.argv[1]
-    pgm_folder_to_png(input_folder_path)
+    pgm_folder_to_jpg(input_folder_path)

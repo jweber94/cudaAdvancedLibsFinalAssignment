@@ -1,7 +1,7 @@
 #!/usr/bin/bash
 
 echo "Convert the dataset to pgm data to have a better handle on it in the code"
-./helpers/convertToPgm.py ./data/misc
+./helpers/convertToPgm.py ./data/FIRE_example
 
 echo "Run the application"
 ./build/cudaAtScaleFinalAssignment -p $(pwd)/data/misc -o $(pwd)/output

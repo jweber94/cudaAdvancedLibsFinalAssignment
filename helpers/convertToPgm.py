@@ -4,34 +4,34 @@ import sys
 from PIL import Image
 import numpy as np
 
-def tiff_folder_to_pgm(input_folder):
+def jpg_folder_to_pgm(input_folder):
     """
-    Converts all TIFF files in a folder to PGM (Portable Graymap) files.
+    Converts all JPG files in a folder to PGM (Portable Graymap) files.
 
     Args:
-        input_folder (str): The path to the input folder containing TIFF files.
+        input_folder (str): The path to the input folder containing JPG files.
     """
     if not os.path.isdir(input_folder):
         print(f"Error: The specified path '{input_folder}' is not a valid folder.")
         return
 
-    tiff_files = [f for f in os.listdir(input_folder) if f.lower().endswith(('.tiff', '.tif'))]
+    jpg_files = [f for f in os.listdir(input_folder) if f.lower().endswith(('.jpeg', '.jpg'))]
 
-    if not tiff_files:
-        print(f"No TIFF files found in the folder '{input_folder}'.")
+    if not jpg_files:
+        print(f"No JPG files found in the folder '{input_folder}'.")
         return
 
-    print(f"Starting conversion of {len(tiff_files)} TIFF files in the folder '{input_folder}'.")
+    print(f"Starting conversion of {len(jpg_files)} JPG files in the folder '{input_folder}'.")
 
-    for tiff_file_name in tiff_files:
-        tiff_path = os.path.join(input_folder, tiff_file_name)
-        base_name, _ = os.path.splitext(tiff_file_name)
+    for jpg_file_name in jpg_files:
+        jpg_path = os.path.join(input_folder, jpg_file_name)
+        base_name, _ = os.path.splitext(jpg_file_name)
         pgm_file_name = base_name + ".pgm"
         pgm_path = os.path.join(input_folder, pgm_file_name)
 
         try:
-            # Open the TIFF image
-            img = Image.open(tiff_path)
+            # Open the JPG image
+            img = Image.open(jpg_path)
 
             # Convert to grayscale if it's not already grayscale
             if img.mode != 'L':
@@ -51,19 +51,19 @@ def tiff_folder_to_pgm(input_folder):
                 # Write the image data
                 pgm_file.write(image_array.tobytes())
 
-            print(f"Converted: '{tiff_file_name}' -> '{pgm_file_name}'")
+            print(f"Converted: '{jpg_file_name}' -> '{pgm_file_name}'")
 
         except FileNotFoundError:
-            print(f"Error: The file '{tiff_path}' was not found (should not happen).")
+            print(f"Error: The file '{jpg_path}' was not found (should not happen).")
         except Exception as e:
-            print(f"Error during conversion of '{tiff_file_name}': {e}")
+            print(f"Error during conversion of '{jpg_file_name}': {e}")
 
-    print("Conversion of all TIFF files completed.")
+    print("Conversion of all JPG files completed.")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python your_script_name.py <path_to_tiff_folder>")
+        print("Usage: python your_script_name.py <path_to_jpg_folder>")
         sys.exit(1)
 
     input_folder_path = sys.argv[1]
-    tiff_folder_to_pgm(input_folder_path)
+    jpg_folder_to_pgm(input_folder_path)
