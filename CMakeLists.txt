@@ -10,6 +10,7 @@ find_package(OpenCV REQUIRED)
 ## create the executable
 set(SRCS
     src/main.cu
+    src/ImageProcessor.cu
 )
 
 set(INCLUDES

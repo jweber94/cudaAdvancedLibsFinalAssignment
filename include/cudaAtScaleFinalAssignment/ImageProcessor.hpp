@@ -6,13 +6,11 @@
 #include <cufft.h>
 
 #include <cuda_runtime.h>
-#include <npp.h>
-#include <nppi_arithmetic_and_logical_operations.h>
 
-#include "UtilNPP/ImageIO.h"
-#include "UtilNPP/ImagesCPU.h"
-#include "UtilNPP/ImagesNPP.h"
 #include <opencv2/opencv.hpp>
+
+// forward declaration of the calculation kernel
+__global__ void crossCorrelationKernel(cufftComplex *F1_gpu, cufftComplex *F2_gpu, cufftComplex *P_gpu, int rows, int complex_output_cols);
 
 class ImageProcessor
 {
@@ -130,10 +128,43 @@ private:
 
     int calculateCrossCorrelation(cufftComplex *img1, cufftComplex * img2, int rows, int cols) {
         auto pfrequencySpaceImg1 = perform2DFFT(img1, rows, cols);
+        if (nullptr == pfrequencySpaceImg1) {
+            std::cerr << "Invalid pointer to pfrequencySpaceImg1 received - terminating processing" << std::endl;
+            return 1;
+        }
         auto pfrequencySpaceImg2 = perform2DFFT(img2, rows, cols);
+        if (nullptr == pfrequencySpaceImg2)
+        {
+            cudaFree(pfrequencySpaceImg1);
+            std::cerr << "Invalid pointer to pfrequencySpaceImg2 received - terminating processing" << std::endl;
+            return 1;
+        }
 
+        // allocate memory for the cross correllation on GPU
+        int complex_output_cols = cols / 2 + 1; // since we do R2C conversion and cufft does not save the redundand data (since R2C is symetric to the amplitude axis in frequency domain) of the fourrier transform
+        cufftComplex *d_crossCorrelationResult = nullptr;
+        size_t cross_correlation_bytes = rows * complex_output_cols * sizeof(cufftComplex);
+        if (cudaError::cudaSuccess != cudaMalloc((void **)&d_crossCorrelationResult, cross_correlation_bytes)) {
+            std::cerr << "Could not allocate memory for the cross correllation result" << std::endl;
+            cudaFree(pfrequencySpaceImg1);
+            cudaFree(pfrequencySpaceImg2);
+            return 1;
+        }
+
+        // kernel launch parameter
+        dim3 blockSize(16, 16);
+        dim3 gridSize((complex_output_cols + blockSize.x - 1) / blockSize.x,
+                      (rows + blockSize.y - 1) / blockSize.y);
+
+        // Do the calculation in frequency space
+        crossCorrelationKernel<<<gridSize, blockSize>>>(pfrequencySpaceImg1, pfrequencySpaceImg2, d_crossCorrelationResult, rows, complex_output_cols);
+        
+        // wait for all calculations to finish
+        cudaDeviceSynchronize(); 
+        
         cudaFree(pfrequencySpaceImg1);
         cudaFree(pfrequencySpaceImg2);
+        cudaFree(d_crossCorrelationResult); // fuers erste
         return 0;
     }
 
@@ -152,7 +183,7 @@ private:
         cufftPlan2d(&plan, n[0], n[1], CUFFT_R2C);
         
         // allocate memory for the result
-        int complex_output_cols = cols / 2 + 1;
+        int complex_output_cols = cols / 2 + 1; // since we do R2C conversion and cufft does not save the redundand data (since R2C is symetric to the amplitude axis in frequency domain) of the fourrier transform
         cufftComplex *d_fft_output = nullptr;
         size_t fft_output_bytes = rows * complex_output_cols * sizeof(cufftComplex);
         if (cudaError::cudaSuccess != cudaMalloc((void **)&d_fft_output, fft_output_bytes)) {
