@@ -45,3 +45,10 @@ __global__ void crossCorrelationKernel(cufftComplex* F1_gpu, cufftComplex* F2_gp
         }
     }
 }
+
+__global__ void scale_kernel(float* data, int num_elements, float scale_factor) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < num_elements) {
+        data[idx] /= scale_factor;
+    }
+}

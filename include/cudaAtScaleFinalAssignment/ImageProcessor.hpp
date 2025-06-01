@@ -11,6 +11,7 @@
 
 // forward declaration of the calculation kernel
 __global__ void crossCorrelationKernel(cufftComplex *F1_gpu, cufftComplex *F2_gpu, cufftComplex *P_gpu, int rows, int complex_output_cols);
+__global__ void scale_kernel(float *data, int num_elements, float scale_factor);
 
 class ImageProcessor
 {
@@ -41,23 +42,29 @@ public:
             return false;
         }
 
-        // Do Fourrier Transform
-        if (0 != calculateCrossCorrelation(pImgGPU, pImgGPU, img.rows, img.cols)) {
+        // Do Fourrier Transform and calculate the cross correllation
+        auto pCrossCorrellationMatrix = calculateCrossCorrelation(pImgGPU, pImgGPU, img.rows, img.cols);
+        if (nullptr == pCrossCorrellationMatrix)
+        {
             std::cerr << "Could not do the fourrier transformation" << std::endl;
+            cudaFree(pCrossCorrellationMatrix);
             return false;
         }
 
-        // Calculate Cross-Correllation
-
         // Convert Corellation Matrix back
+        auto pCorrellationResultReal = perform2DIFFT_and_scale(pCrossCorrellationMatrix, img.rows, img.cols);
 
         // Copy Correllation Matrix to CPU
 
         // Search for maximum (e.g. with thrust lib)
 
         // Free memory on GPU
-        cudaFree(pImgGPU);
-
+        if (nullptr != pImgGPU)
+            cudaFree(pImgGPU);
+        if (nullptr != pCrossCorrellationMatrix)
+            cudaFree(pCrossCorrellationMatrix);
+        if (nullptr != pCorrellationResultReal)
+            cudaFree(pCorrellationResultReal);
         return true;
     }
 
@@ -126,18 +133,19 @@ private:
         return d_complex_image;
     }
 
-    int calculateCrossCorrelation(cufftComplex *img1, cufftComplex * img2, int rows, int cols) {
+    cufftComplex * calculateCrossCorrelation(cufftComplex *img1, cufftComplex *img2, int rows, int cols)
+    {
         auto pfrequencySpaceImg1 = perform2DFFT(img1, rows, cols);
         if (nullptr == pfrequencySpaceImg1) {
             std::cerr << "Invalid pointer to pfrequencySpaceImg1 received - terminating processing" << std::endl;
-            return 1;
+            return nullptr;
         }
         auto pfrequencySpaceImg2 = perform2DFFT(img2, rows, cols);
         if (nullptr == pfrequencySpaceImg2)
         {
             cudaFree(pfrequencySpaceImg1);
             std::cerr << "Invalid pointer to pfrequencySpaceImg2 received - terminating processing" << std::endl;
-            return 1;
+            return nullptr;
         }
 
         // allocate memory for the cross correllation on GPU
@@ -148,7 +156,7 @@ private:
             std::cerr << "Could not allocate memory for the cross correllation result" << std::endl;
             cudaFree(pfrequencySpaceImg1);
             cudaFree(pfrequencySpaceImg2);
-            return 1;
+            return nullptr;
         }
 
         // kernel launch parameter
@@ -164,8 +172,7 @@ private:
         
         cudaFree(pfrequencySpaceImg1);
         cudaFree(pfrequencySpaceImg2);
-        cudaFree(d_crossCorrelationResult); // fuers erste
-        return 0;
+        return d_crossCorrelationResult;
     }
 
     cufftComplex *perform2DFFT(cufftComplex *input_gpu_data, int rows, int cols)
@@ -200,6 +207,45 @@ private:
         // clean up the space
         cufftDestroy(plan);
         return d_fft_output; // Gib den Zeiger auf die komplexen FFT-Ergebnisse zurück
+    }
+
+    float *perform2DIFFT_and_scale(cufftComplex *output_complex_data, int rows, int cols)
+    {
+        if (!output_complex_data)
+        {
+            std::cerr << "ERROR: Invalid data for the back transformation-received a nullptr" << std::endl;
+            return nullptr;
+        }
+
+        cufftHandle plan;
+        long long n[2];
+        n[0] = rows;
+        n[1] = cols;
+
+        cufftPlan2d(&plan, n[0], n[1], CUFFT_C2R);
+        
+        // allocate memory for the back transformation of GPU - we want to have a rows x cols image as a result and since cufftComplex.x/y is a float in the background, we need floats
+        float *d_ifft_output = nullptr;
+        size_t ifft_output_bytes = rows * cols * sizeof(float);
+        if (cudaError::cudaSuccess != cudaMalloc((void **)&d_ifft_output, ifft_output_bytes)) {
+            std::cerr << "Could not allocate memory for the backtransform result" << std::endl;
+            return nullptr;
+        }
+        
+        // do the backtransformation and wait to finish them all
+        cufftExecC2R(plan, output_complex_data, d_ifft_output);
+        cudaDeviceSynchronize(); 
+        cufftDestroy(plan);
+
+        // we need to scale the result of cufft by the number of datapoints since we receive IFFT(FFT(x)) = N*x if we use cufft
+        int num_elements = rows * cols;
+        float scale_factor = static_cast<float>(rows * cols);
+        dim3 scaleBlockSize(256);
+        dim3 scaleGridSize((num_elements + scaleBlockSize.x - 1) / scaleBlockSize.x);
+        scale_kernel<<<scaleGridSize, scaleBlockSize>>>(d_ifft_output, num_elements, scale_factor);
+        cudaDeviceSynchronize(); // wait until all threads of the kernel are finished
+        
+        return d_ifft_output; // Gib den Zeiger auf das rekonstruierte (skalierte) Bild zurück
     }
 
     std::string generateNewNameFromPath(const std::string &path) {
