@@ -29,21 +29,34 @@ public:
         cudaSetDevice(0);
     }
 
-    bool processImage(const std::string &pathToImg)
+    bool processImage(const std::string &pathToImg1, const std::string &pathToImg2)
     {
         // read image to RAM
-        cv::Mat img = readImage(pathToImg);
+        cv::Mat img1 = readImage(pathToImg1);
+        cv::Mat img2 = readImage(pathToImg2);
+
+        if ((img1.rows != img2.rows) || (img1.cols != img2.cols)) {
+            std::cerr << "Invalid image dimension" << std::endl;
+            return false;
+        }
 
         // Copy image data to GPU
-        auto pImgGPU = copyToGpu(img);
-        if (nullptr == pImgGPU)
+        auto pImgGPU1 = copyToGpu(img1);
+        if (nullptr == pImgGPU1)
         {
             std::cerr << "Could not copy the image to GPU" << std::endl;
             return false;
         }
+        auto pImgGPU2 = copyToGpu(img2);
+        if (nullptr == pImgGPU2)
+        {
+            std::cerr << "Could not copy the image to GPU" << std::endl;
+            cudaFree(pImgGPU1);
+            return false;
+        }
 
         // Do Fourrier Transform and calculate the cross correllation
-        auto pCrossCorrellationMatrix = calculateCrossCorrelation(pImgGPU, pImgGPU, img.rows, img.cols);
+        auto pCrossCorrellationMatrix = calculateCrossCorrelation(pImgGPU1, pImgGPU2, img1.rows, img1.cols);
         if (nullptr == pCrossCorrellationMatrix)
         {
             std::cerr << "Could not do the fourrier transformation" << std::endl;
@@ -52,11 +65,11 @@ public:
         }
 
         // Convert Corellation Matrix back
-        auto pCorrellationResultReal = perform2DIFFT_and_scale(pCrossCorrellationMatrix, img.rows, img.cols);
+        auto pCorrellationResultReal = perform2DIFFT_and_scale(pCrossCorrellationMatrix, img1.rows, img1.cols);
 
         // Copy Correllation Matrix to CPU
-        std::vector<float> h_ifft_correlation_result(img.rows * img.cols);
-        cudaMemcpy(h_ifft_correlation_result.data(), pCorrellationResultReal, img.rows * img.cols * sizeof(float), cudaMemcpyDeviceToHost);
+        std::vector<float> h_ifft_correlation_result(img1.rows * img1.cols);
+        cudaMemcpy(h_ifft_correlation_result.data(), pCorrellationResultReal, img1.rows * img1.cols * sizeof(float), cudaMemcpyDeviceToHost);
 
         // Search for maximum
         float max_val = 0.0f;
@@ -69,14 +82,16 @@ public:
                 max_idx = i;
             }
         }
-        int peak_y = max_idx / img.cols;
-        int peak_x = max_idx % img.cols;
+        int peak_y = max_idx / img1.cols;
+        int peak_x = max_idx % img1.cols;
 
         std::cout << "Crosscorrelationspeak found at (X,Y): (" << peak_x << ", " << peak_y << ") with value: " << max_val << std::endl;
 
         // Free memory on GPU
-        if (nullptr != pImgGPU)
-            cudaFree(pImgGPU);
+        if (nullptr != pImgGPU1)
+            cudaFree(pImgGPU1);
+        if (nullptr != pImgGPU2)
+            cudaFree(pImgGPU2);
         if (nullptr != pCrossCorrellationMatrix)
             cudaFree(pCrossCorrellationMatrix);
         if (nullptr != pCorrellationResultReal)
@@ -100,7 +115,6 @@ private:
             std::cerr << "WARNING: Image is not a CV_8UC1. The data will be converted" << std::endl;
             image.convertTo(image, CV_8UC1); // Sicherstellen, dass es 8-Bit, 1-Kanal ist
         }
-        std::cout << "Cols: " << image.cols << ", Height: " << image.rows << std::endl;
         return image;
     }
 

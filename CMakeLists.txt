@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 
 ## basic cmake setup
-project(cudaAtScaleFinalAssignment LANGUAGES CXX CUDA) # enable cuda libraries is easy since cmake 3.10 - this includes the cuda runtime api but not the additional libraries of cuda https://stackoverflow.com/questions/66327073/how-to-find-and-link-cuda-libraries-using-cmake-3-15-and-later
+project(cudaAdvancedLibsFinalAssignment LANGUAGES CXX CUDA) # enable cuda libraries is easy since cmake 3.10 - this includes the cuda runtime api but not the additional libraries of cuda https://stackoverflow.com/questions/66327073/how-to-find-and-link-cuda-libraries-using-cmake-3-15-and-later
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 
 find_package(OpenCV REQUIRED)
 
@@ -15,8 +15,8 @@ set(SRCS
 
 set(INCLUDES
     include/CLI11.h
-    include/cudaAtScaleFinalAssignment/ImageProcessor.hpp
-    include/cudaAtScaleFinalAssignment/PgmDataGetter.hpp
+    include/cudaAdvancedLibsFinalAssignment/ImageProcessor.hpp
+    include/cudaAdvancedLibsFinalAssignment/ImagePathGetter.hpp
 )
 
 add_executable(${PROJECT_NAME} ${SRCS})

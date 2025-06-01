@@ -4,7 +4,7 @@
 #include "CLI11.hpp"
 
 #include "cudaAtScaleFinalAssignment/ImageProcessor.hpp"
-#include "cudaAtScaleFinalAssignment/PgmDataGetter.hpp"
+#include "cudaAtScaleFinalAssignment/ImagePathGetter.hpp"
 
 
 int main(int argc, char** argv) {
@@ -18,11 +18,8 @@ int main(int argc, char** argv) {
     app.add_option("-o,--output", pathToOutput, "Output folder where the transformed images should be stored.");
     CLI11_PARSE(app, argc, argv);
 
-
-
-    
     // data input
-    PgmDataGetter dataLoader(pathToData);
+    ImagePathGetter dataLoader(pathToData);
 
     // image processor encapsulation
     ImageProcessor imgProcessor(pathToOutput);
@@ -31,14 +28,17 @@ int main(int argc, char** argv) {
     std::cout << "Processing " << dataLoader.getNumImages() << " images" << std::endl;
     bool terminate = false;
     while (!terminate) {
-        std::string tmpImgPath = dataLoader.getNextImage();
-        if ("" == tmpImgPath || "Error" == tmpImgPath) {
+        auto tmpImgPaths = dataLoader.getNextImage();
+        if (std::nullopt == tmpImgPaths) {
             terminate = true;
             continue;
         }
 
-        if (!imgProcessor.processImage(tmpImgPath)) {
-            std::cerr << "Could not process image " << tmpImgPath << " properly." << std::endl;
+        std::string key = std::get<0>(tmpImgPaths.value());
+        std::pair<std::string, std::string> val = std::get<1>(tmpImgPaths.value());
+
+        if (!imgProcessor.processImage(std::get<0>(val), std::get<1>(val))) {
+            std::cerr << "Could not process image " << std::get<0>(val) << ", " << std::get<1>(val) << " properly." << std::endl;
         }
     }
     std::cout << "All images were processing. Terminating successfully." << std::endl;
