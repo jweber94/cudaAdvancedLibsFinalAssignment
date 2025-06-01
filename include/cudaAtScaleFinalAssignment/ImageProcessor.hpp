@@ -55,8 +55,24 @@ public:
         auto pCorrellationResultReal = perform2DIFFT_and_scale(pCrossCorrellationMatrix, img.rows, img.cols);
 
         // Copy Correllation Matrix to CPU
+        std::vector<float> h_ifft_correlation_result(img.rows * img.cols);
+        cudaMemcpy(h_ifft_correlation_result.data(), pCorrellationResultReal, img.rows * img.cols * sizeof(float), cudaMemcpyDeviceToHost);
 
-        // Search for maximum (e.g. with thrust lib)
+        // Search for maximum
+        float max_val = 0.0f;
+        int max_idx = 0;
+        for (int i = 0; i < h_ifft_correlation_result.size(); ++i)
+        {
+            if (h_ifft_correlation_result[i] > max_val)
+            {
+                max_val = h_ifft_correlation_result[i];
+                max_idx = i;
+            }
+        }
+        int peak_y = max_idx / img.cols;
+        int peak_x = max_idx % img.cols;
+
+        std::cout << "Crosscorrelationspeak found at (X,Y): (" << peak_x << ", " << peak_y << ") with value: " << max_val << std::endl;
 
         // Free memory on GPU
         if (nullptr != pImgGPU)
