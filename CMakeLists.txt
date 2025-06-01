@@ -5,6 +5,8 @@ project(cudaAtScaleFinalAssignment LANGUAGES CXX CUDA) # enable cuda libraries i
 
 set(CMAKE_CXX_STANDARD 20)
 
+find_package(OpenCV REQUIRED)
+
 ## create the executable
 set(SRCS
     src/main.cu
@@ -78,6 +80,7 @@ target_include_directories(${PROJECT_NAME}
     PUBLIC ${NPPI_INCLUDE_DIR}
     PUBLIC ${NPPIAL_INCLUDE_DIR}
     PUBLIC ${CUFFT_INCLUDE_DIR}
+    PUBLIC ${OpenCV_INCLUDE_DIRS}
 )
 
 target_link_libraries(${PROJECT_NAME} 
@@ -85,6 +88,7 @@ target_link_libraries(${PROJECT_NAME}
     PUBLIC ${NPPI_LIBRARY}
     PUBLIC ${NPPIAL_LIBRARY}
     PUBLIC ${CUFFT_LIBRARY}
+    PUBLIC ${OpenCV_LIBS}
 )
 
 target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--std=c++17>) # you can not use the normal CXX standart if you use cuda along with it
