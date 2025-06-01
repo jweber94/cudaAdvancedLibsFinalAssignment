@@ -3,8 +3,8 @@
 
 #include "CLI11.hpp"
 
-#include "cudaAtScaleFinalAssignment/ImageProcessor.hpp"
-#include "cudaAtScaleFinalAssignment/ImagePathGetter.hpp"
+#include "cudaAdvancedLibsFinalAssignment/ImageProcessor.hpp"
+#include "cudaAdvancedLibsFinalAssignment/ImagePathGetter.hpp"
 
 
 int main(int argc, char** argv) {

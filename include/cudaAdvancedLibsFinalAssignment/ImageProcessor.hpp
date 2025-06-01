@@ -31,6 +31,7 @@ public:
 
     bool processImage(const std::string &pathToImg1, const std::string &pathToImg2)
     {
+        std::cout << "Processing paths: " << pathToImg1 << "; " << pathToImg2 << std::endl;
         // read image to RAM
         cv::Mat img1 = readImage(pathToImg1);
         cv::Mat img2 = readImage(pathToImg2);
@@ -71,17 +72,27 @@ public:
         std::vector<float> h_ifft_correlation_result(img1.rows * img1.cols);
         cudaMemcpy(h_ifft_correlation_result.data(), pCorrellationResultReal, img1.rows * img1.cols * sizeof(float), cudaMemcpyDeviceToHost);
 
+        saveCorrelationResultAsImage(h_ifft_correlation_result, img1.rows, img1.cols, pathToImg1);
+        
         // Search for maximum
         float max_val = 0.0f;
         int max_idx = 0;
+        std::cout << "Image is: " << img1.rows << " x " << img1.cols << " = " << h_ifft_correlation_result.size() << std::endl;
         for (int i = 0; i < h_ifft_correlation_result.size(); ++i)
         {
             if (h_ifft_correlation_result[i] > max_val)
             {
+                std::cout << "Update maxval" << std::endl;
                 max_val = h_ifft_correlation_result[i];
                 max_idx = i;
             }
+            else if (h_ifft_correlation_result[i] == 0) {
+                std::cerr << "Value is 0 " << std::endl;
+            }
         }
+        std::cout << "max_idx = " << max_idx << std::endl;
+        std::cout << "max_val = " << max_val << std::endl;
+
         int peak_y = max_idx / img1.cols;
         int peak_x = max_idx % img1.cols;
 
@@ -278,24 +289,42 @@ private:
         return d_ifft_output; // Gib den Zeiger auf das rekonstruierte (skalierte) Bild zurück
     }
 
-    std::string generateNewNameFromPath(const std::string &path) {
-        size_t lastSlash = path.rfind('/');
-        std::string nameWithPath = (lastSlash == std::string::npos) ? path : path.substr(lastSlash + 1);
-        size_t lastDot = nameWithPath.rfind('.');
-        std::string nameWithoutEnding;
-        std::string ending;
-        if (lastDot != std::string::npos)
+    void saveCorrelationResultAsImage(const std::vector<float> &correlation_data, int rows, int cols, const std::string &original_path)
+    {
+        cv::Mat correlation_image(rows, cols, CV_32FC1, const_cast<float *>(correlation_data.data()));
+        cv::Mat display_image;
+        double minVal, maxVal;
+        cv::minMaxLoc(correlation_image, &minVal, &maxVal);
+
+        std::cout << "Korrelationsbild Min-Wert: " << minVal << ", Max-Wert: " << maxVal << std::endl;
+
+        if (maxVal > 0)
         {
-            nameWithoutEnding = nameWithPath.substr(0, lastDot);
-            ending = nameWithPath.substr(lastDot);
+            correlation_image.convertTo(display_image, CV_8UC1, 255.0 / maxVal);
         }
         else
         {
-            nameWithoutEnding = nameWithPath;
+            display_image = cv::Mat::zeros(rows, cols, CV_8UC1);
+            std::cerr << "WARNUNG: Max-Wert im Korrelationsbild ist 0 oder negativ. Bild wird schwarz gespeichert." << std::endl;
         }
-        std::string newName = nameWithoutEnding + "_negative";
-        newName += ending;
-        return newName;
+
+        std::string base_name = original_path.substr(original_path.find_last_of("/\\") + 1);
+        size_t dot_pos = base_name.rfind('.');
+        if (dot_pos != std::string::npos)
+        {
+            base_name = base_name.substr(0, dot_pos);
+        }
+        std::string output_filename = m_outputFolder + "/" + base_name + "_correlation_result.png";
+
+        bool success = cv::imwrite(output_filename, display_image);
+        if (success)
+        {
+            std::cout << "Successfully saved correllation image: " << output_filename << std::endl;
+        }
+        else
+        {
+            std::cerr << "ERROR: Could not save correllation image: " << output_filename << std::endl;
+        }
     }
 
     std::string m_outputFolder;

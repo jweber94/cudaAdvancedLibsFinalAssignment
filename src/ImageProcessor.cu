@@ -1,4 +1,4 @@
-#include "cudaAtScaleFinalAssignment/ImageProcessor.hpp"
+#include "cudaAdvancedLibsFinalAssignment/ImageProcessor.hpp"
 
 __global__ void crossCorrelationKernel(cufftComplex* F1_gpu, cufftComplex* F2_gpu, cufftComplex* P_gpu,
                                        int rows, int complex_output_cols)
