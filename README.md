@@ -1,4 +1,12 @@
-# [Negative Image Generator](https://en.wikipedia.org/wiki/Negative_(photography)) using NVIDIA NPP with CUDA
+# [Phase Correllation of Images with cuFFT]
+
+## NEXT TODOS
++ Save a list of the image names and their displacement
++ Rework the README
++ Record the video
+    - Explain why rotation is a problem which is the reason why the FIRE dataset is not processable
+    - Explain that the shift calculation is independened of the illumination
++ Hand in the assignment
 
 ## Overview
 
