@@ -9,6 +9,8 @@
 
 #include <opencv2/opencv.hpp>
 
+//#define FIREDATASET
+
 // forward declaration of the calculation kernel
 __global__ void crossCorrelationKernel(cufftComplex *F1_gpu, cufftComplex *F2_gpu, cufftComplex *P_gpu, int rows, int complex_output_cols);
 __global__ void scale_kernel(float *data, int num_elements, float scale_factor);
@@ -141,7 +143,41 @@ private:
             std::cerr << "WARNING: Image is not a CV_8UC1. The data will be converted" << std::endl;
             image.convertTo(image, CV_8UC1); // Sicherstellen, dass es 8-Bit, 1-Kanal ist
         }
+        #ifdef FIREDATASET
+        if (image.rows != 2912 && image.cols != 2912)
+        {
+            std::cerr << "Invalid image dimension" << std::endl;
+            return {};
+        }
+
+        // Define FIRE dataset ROI for cropping
+        int roiWidth = 2265;
+        int roiHeight = 1440;
+
+        int startX = (image.cols - roiWidth) / 2;
+        int startY = (image.rows - roiHeight) / 2;
+
+        // sanity check
+        if (startX < 0 || startY < 0 || startX + roiWidth > image.cols || startY + roiHeight > image.rows)
+        {
+            std::cerr << "ROI is outside of the image." << std::endl;
+            return {};
+        }
+
+        cv::Rect roi(startX, startY, roiWidth, roiHeight);
+        cv::Mat croppedImage;
+        image(roi).copyTo(croppedImage);
+        #ifdef DEBUG
+        static int counter = 0;
+        std::string debugPath = "./output/test_" + std::to_string(counter) + ".jpg";
+        std::cout << "Saving image under path " << debugPath << std::endl;
+        cv::imwrite(debugPath, croppedImage);
+        counter++;
+        #endif // DEBUG
+        return croppedImage;
+        #elif
         return image;
+        #endif
     }
 
     float *copyToGpu(const cv::Mat &imgData)
