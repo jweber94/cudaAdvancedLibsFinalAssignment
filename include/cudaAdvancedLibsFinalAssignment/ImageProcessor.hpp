@@ -10,6 +10,7 @@
 #include <opencv2/opencv.hpp>
 
 //#define FIREDATASET
+//#define DEBUG
 
 // forward declaration of the calculation kernel
 __global__ void crossCorrelationKernel(cufftComplex *F1_gpu, cufftComplex *F2_gpu, cufftComplex *P_gpu, int rows, int complex_output_cols);
@@ -175,9 +176,8 @@ private:
         counter++;
         #endif // DEBUG
         return croppedImage;
-        #elif
-        return image;
         #endif
+        return image;
     }
 
     float *copyToGpu(const cv::Mat &imgData)
