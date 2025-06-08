@@ -31,7 +31,6 @@ public:
 
     bool processImage(const std::string &pathToImg1, const std::string &pathToImg2)
     {
-        std::cout << "Processing paths: " << pathToImg1 << "; " << pathToImg2 << std::endl;
         // read image to RAM
         cv::Mat img1 = readImage(pathToImg1);
         cv::Mat img2 = readImage(pathToImg2);
@@ -41,7 +40,7 @@ public:
             return false;
         }
 
-        // Copy image data to GPU
+        // Copy image data to GPU in real number form - cufftreal_t* or float* needed to be used with cufft
         auto pImgGPU1 = copyToGpu(img1);
         if (nullptr == pImgGPU1)
         {
@@ -70,37 +69,57 @@ public:
 
         // Copy Correllation Matrix to CPU
         std::vector<float> h_ifft_correlation_result(img1.rows * img1.cols);
-        cudaMemcpy(h_ifft_correlation_result.data(), pCorrellationResultReal, img1.rows * img1.cols * sizeof(float), cudaMemcpyDeviceToHost);
-
-        saveCorrelationResultAsImage(h_ifft_correlation_result, img1.rows, img1.cols, pathToImg1);
-        
-        // Search for maximum
-        float max_val = 0.0f;
-        int max_idx = 0;
-        std::cout << "Image is: " << img1.rows << " x " << img1.cols << " = " << h_ifft_correlation_result.size() << std::endl;
-        for (int i = 0; i < h_ifft_correlation_result.size(); ++i)
-        {
-            if (h_ifft_correlation_result[i] > max_val)
-            {
-                std::cout << "Update maxval" << std::endl;
-                max_val = h_ifft_correlation_result[i];
-                max_idx = i;
-            }
-            else if (h_ifft_correlation_result[i] == 0) {
-                std::cerr << "Value is 0 " << std::endl;
-            }
+        auto retCpyBack =cudaMemcpy(h_ifft_correlation_result.data(), pCorrellationResultReal, img1.rows * img1.cols * sizeof(float), cudaMemcpyDeviceToHost);
+        if (cudaError::cudaSuccess != retCpyBack) {
+            std::cerr << "Could not copy the cross correllation matrix back to CPU" << std::endl;
+            cudaFree(pCrossCorrellationMatrix);
+            cudaFree(pCorrellationResultReal);
+            return false;
         }
-        std::cout << "max_idx = " << max_idx << std::endl;
-        std::cout << "max_val = " << max_val << std::endl;
 
-        int peak_y = max_idx / img1.cols;
-        int peak_x = max_idx % img1.cols;
+        cv::Mat correlation_mat(img1.rows, img1.cols, CV_32FC1, h_ifft_correlation_result.data());
 
-        std::cout << "Crosscorrelationspeak found at (X,Y): (" << peak_x << ", " << peak_y << ") with value: " << max_val << std::endl;
+        cv::Point raw_peak_loc;
+        double raw_max_val;
+        cv::minMaxLoc(correlation_mat, nullptr, &raw_max_val, nullptr, &raw_peak_loc);
+        std::cout << "DEBUG: Peak der IFFT-Rohausgabe (vor Verschiebung) bei (X,Y): (" << raw_peak_loc.x << ", " << raw_peak_loc.y << ") mit Wert: " << raw_max_val << std::endl;
 
+        cv::Mat shifted_correlation_mat = correlation_mat.clone();
+        int cx = shifted_correlation_mat.cols / 2;
+        int cy = shifted_correlation_mat.rows / 2;
+
+        cv::Mat q0(shifted_correlation_mat, cv::Rect(0, 0, cx, cy));   // Top-Left
+        cv::Mat q1(shifted_correlation_mat, cv::Rect(cx, 0, cx, cy));  // Top-Right
+        cv::Mat q2(shifted_correlation_mat, cv::Rect(0, cy, cx, cy));  // Bottom-Left
+        cv::Mat q3(shifted_correlation_mat, cv::Rect(cx, cy, cx, cy)); // Bottom-Right
+
+        cv::Mat tmp;
+        q0.copyTo(tmp);
+        q3.copyTo(q0);
+        tmp.copyTo(q3);
+
+        q1.copyTo(tmp);
+        q2.copyTo(q1);
+        tmp.copyTo(q2);
+
+        cv::Point peakLoc;
+        double max_val_double;
+        cv::minMaxLoc(shifted_correlation_mat, nullptr, &max_val_double, nullptr, &peakLoc);
+
+        int shift_x = peakLoc.x - cx;
+        int shift_y = peakLoc.y - cy;
+
+        std::cout << "\n----------------------------------------" << std::endl;
+        std::cout << "Kreuzkorrelations-Peak gefunden bei (X,Y) im SHIFTED-Bild: (" << peakLoc.x << ", " << peakLoc.y << ")" << std::endl;
+        std::cout << "Maximaler Korrelationswert: " << max_val_double << std::endl;
+        std::cout << "Berechnete Verschiebung (dx, dy): (" << shift_x << ", " << shift_y << ") Pixel" << std::endl;
+        std::cout << "----------------------------------------" << std::endl;
+
+        saveCorrelationResultAsImage(shifted_correlation_mat, img1.rows, img1.cols, pathToImg1);
+        
         // Free memory on GPU
         if (nullptr != pImgGPU1)
-            cudaFree(pImgGPU1);
+                cudaFree(pImgGPU1);
         if (nullptr != pImgGPU2)
             cudaFree(pImgGPU2);
         if (nullptr != pCrossCorrellationMatrix)
@@ -129,7 +148,7 @@ private:
         return image;
     }
 
-    cufftComplex *copyToGpu(const cv::Mat &imgData)
+    float *copyToGpu(const cv::Mat &imgData)
     {
         // sanity check
         if (imgData.empty() || imgData.type() != CV_8UC1)
@@ -145,36 +164,33 @@ private:
 
         // convert greyscale data to cufftComplex - we could do this on GPU in order to copy less data from CPU to GPU but for the sake on simplicity we do the conversion on CPU
         size_t num_pixels = imgData.total();
-        std::vector<cufftComplex> host_complex_buffer(num_pixels);
-        const uint8_t *img_ptr = imgData.ptr<uint8_t>(0); // get pointer to the raw greyscale data on CPU cv::Mat
+
+        std::vector<float> host_real_buffer(num_pixels);
+        const uint8_t *img_ptr = imgData.ptr<uint8_t>(0);
         for (size_t i = 0; i < num_pixels; ++i)
         {
-            host_complex_buffer[i].x = static_cast<float>(img_ptr[i]); // Real part from grayscale
-            host_complex_buffer[i].y = 0.0f;                           // Imaginary part is zero for real input
+            host_real_buffer[i] = static_cast<float>(img_ptr[i]);
         }
 
-        // allocate memory on device/GPU
-        cufftComplex *d_complex_image = nullptr;
-        std::size_t complex_image_bytes = num_pixels * sizeof(cufftComplex);
-        cudaError_t err = cudaMalloc((void **)&d_complex_image, complex_image_bytes);
-        if (cudaError::cudaSuccess != err)
+        float *d_image = nullptr;
+        size_t image_bytes = num_pixels * sizeof(float);
+        auto retAlloc = cudaMalloc((void **)&d_image, image_bytes);
+        if (cudaError::cudaSuccess != retAlloc)
         {
             std::cerr << "Unable to allocate memory on GPU" << std::endl;
             return nullptr;
         }
-
-        // copy data to GPU
-        err = cudaMemcpy(d_complex_image, host_complex_buffer.data(), complex_image_bytes, cudaMemcpyHostToDevice);
-        if (cudaError::cudaSuccess != err)
+        auto retCpy = cudaMemcpy(d_image, host_real_buffer.data(), image_bytes, cudaMemcpyHostToDevice);
+        if (cudaError::cudaSuccess != retCpy)
         {
             std::cerr << "Unable to allocate memory on GPU" << std::endl;
-            cudaFree(d_complex_image); // avoid memory leak on GPU
+            cudaFree(d_image); // avoid memory leak on GPU
             return nullptr;
         }
-        return d_complex_image;
+        return d_image;
     }
 
-    cufftComplex * calculateCrossCorrelation(cufftComplex *img1, cufftComplex *img2, int rows, int cols)
+    cufftComplex *calculateCrossCorrelation(cufftReal *img1, cufftReal *img2, int rows, int cols)
     {
         auto pfrequencySpaceImg1 = perform2DFFT(img1, rows, cols);
         if (nullptr == pfrequencySpaceImg1) {
@@ -216,7 +232,7 @@ private:
         return d_crossCorrelationResult;
     }
 
-    cufftComplex *perform2DFFT(cufftComplex *input_gpu_data, int rows, int cols)
+    cufftComplex *perform2DFFT(cufftReal *input_gpu_data, int rows, int cols)
     {
         if (!input_gpu_data) {
             std::cerr << "Received nullptr - can not do a fourrier transform" << std::endl;
@@ -240,7 +256,7 @@ private:
         }
 
         // do the actual transformation to frquence space
-        cufftExecR2C(plan, (cufftReal *)input_gpu_data, d_fft_output);
+        cufftExecR2C(plan, (cufftReal *)input_gpu_data, d_fft_output); // This was previously the issue - we can not hard-cast a cufftComplex_t to cufftReal_t since the frequency component will be interpreted as a real component and only the half of the data will be interpreted
         
         // wait for the fourrier transform to be fully executed on device
         cudaDeviceSynchronize();
@@ -289,41 +305,29 @@ private:
         return d_ifft_output; // Gib den Zeiger auf das rekonstruierte (skalierte) Bild zurück
     }
 
-    void saveCorrelationResultAsImage(const std::vector<float> &correlation_data, int rows, int cols, const std::string &original_path)
+    void saveCorrelationResultAsImage(cv::Mat &correllationMat, int rows, int cols, const std::string &originalPath)
     {
-        cv::Mat correlation_image(rows, cols, CV_32FC1, const_cast<float *>(correlation_data.data()));
-        cv::Mat display_image;
-        double minVal, maxVal;
-        cv::minMaxLoc(correlation_image, &minVal, &maxVal);
-
-        std::cout << "Korrelationsbild Min-Wert: " << minVal << ", Max-Wert: " << maxVal << std::endl;
-
-        if (maxVal > 0)
-        {
-            correlation_image.convertTo(display_image, CV_8UC1, 255.0 / maxVal);
-        }
-        else
-        {
-            display_image = cv::Mat::zeros(rows, cols, CV_8UC1);
-            std::cerr << "WARNUNG: Max-Wert im Korrelationsbild ist 0 oder negativ. Bild wird schwarz gespeichert." << std::endl;
-        }
-
-        std::string base_name = original_path.substr(original_path.find_last_of("/\\") + 1);
+        std::string base_name = originalPath.substr(originalPath.find_last_of("/\\") + 1);
         size_t dot_pos = base_name.rfind('.');
         if (dot_pos != std::string::npos)
         {
             base_name = base_name.substr(0, dot_pos);
         }
         std::string output_filename = m_outputFolder + "/" + base_name + "_correlation_result.png";
+        
+        cv::Mat display_image;
+        double minVal, maxVal;
+        cv::minMaxLoc(correllationMat, &minVal, &maxVal);
 
+        correllationMat.convertTo(display_image, CV_8UC1, 255.0 / maxVal);
         bool success = cv::imwrite(output_filename, display_image);
         if (success)
         {
-            std::cout << "Successfully saved correllation image: " << output_filename << std::endl;
+            std::cout << "Crosscorrellation matrix successfully saved: " << output_filename << std::endl;
         }
         else
         {
-            std::cerr << "ERROR: Could not save correllation image: " << output_filename << std::endl;
+            std::cerr << "Could not save crosscorrellation matrice: " << output_filename << std::endl;
         }
     }
 
