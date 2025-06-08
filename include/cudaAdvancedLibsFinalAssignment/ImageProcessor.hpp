@@ -82,8 +82,7 @@ public:
         cv::Point raw_peak_loc;
         double raw_max_val;
         cv::minMaxLoc(correlation_mat, nullptr, &raw_max_val, nullptr, &raw_peak_loc);
-        std::cout << "DEBUG: Peak der IFFT-Rohausgabe (vor Verschiebung) bei (X,Y): (" << raw_peak_loc.x << ", " << raw_peak_loc.y << ") mit Wert: " << raw_max_val << std::endl;
-
+        
         cv::Mat shifted_correlation_mat = correlation_mat.clone();
         int cx = shifted_correlation_mat.cols / 2;
         int cy = shifted_correlation_mat.rows / 2;
@@ -110,12 +109,9 @@ public:
         int shift_y = peakLoc.y - cy;
 
         std::cout << "\n----------------------------------------" << std::endl;
-        std::cout << "Kreuzkorrelations-Peak gefunden bei (X,Y) im SHIFTED-Bild: (" << peakLoc.x << ", " << peakLoc.y << ")" << std::endl;
-        std::cout << "Maximaler Korrelationswert: " << max_val_double << std::endl;
-        std::cout << "Berechnete Verschiebung (dx, dy): (" << shift_x << ", " << shift_y << ") Pixel" << std::endl;
-        std::cout << "----------------------------------------" << std::endl;
-
+        std::cout << "Displacement of " << pathToImg1 << " (dx, dy) is: (" << shift_x << ", " << shift_y << ") pixel" << std::endl;
         saveCorrelationResultAsImage(shifted_correlation_mat, img1.rows, img1.cols, pathToImg1);
+        std::cout << "----------------------------------------" << std::endl;
         
         // Free memory on GPU
         if (nullptr != pImgGPU1)
@@ -313,7 +309,7 @@ private:
         {
             base_name = base_name.substr(0, dot_pos);
         }
-        std::string output_filename = m_outputFolder + "/" + base_name + "_correlation_result.png";
+        std::string output_filename = m_outputFolder + base_name + "_correlation_result.png";
         
         cv::Mat display_image;
         double minVal, maxVal;

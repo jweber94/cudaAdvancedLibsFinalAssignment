@@ -21,24 +21,16 @@ class ImagePathGetter
         {
             std::cout << "Scanning for data..." << std::endl;
 
-            // Die directory_iterator nimmt einen std::filesystem::path.
-            // Wenn _pathToData ein std::string ist, wandle es explizit um.
-            //std::filesystem::directory_iterator dirIt(std::filesystem::path(_pathToData));
-
             std::filesystem::directory_iterator dirIt(_pathToData); // <- Das ist das Problem
             for (auto const &dir_entry : dirIt)
             {
-                // Konvertiere den Pfad der directory_entry zu std::string für endsWith
                 if (endsWith(dir_entry.path().string(), ".jpg"))
                 {
-                    std::cout << "Data path added: " << dir_entry.path() << std::endl;
-
-                    // Hier ist die Korrektur: current_path ist bereits ein std::filesystem::path Objekt
                     std::filesystem::path current_path = dir_entry.path();
 
-                    std::string filenameP = current_path.stem().string();         // Korrekt!
-                    std::string directoryP = current_path.parent_path().string(); // Korrekt!
-                    std::string extensionP = current_path.extension().string();   // Korrekt!
+                    std::string filenameP = current_path.stem().string();
+                    std::string directoryP = current_path.parent_path().string();
+                    std::string extensionP = current_path.extension().string();
 
                     if (!directoryP.empty() && directoryP.back() != std::filesystem::path::preferred_separator)
                     {
@@ -49,26 +41,24 @@ class ImagePathGetter
                     if (underscorePos == std::string::npos || underscorePos == filenameP.length() - 1)
                     {
                         std::cerr << "ERROR: Invalid path format (no underscore or at end): " << current_path << std::endl;
-                        continue; // Diesen Eintrag überspringen
+                        continue;
                     }
 
-                    std::string prefix = filenameP.substr(0, underscorePos + 1);  // Z.B. "A02_"
-                    std::string number_str = filenameP.substr(underscorePos + 1); // Z.B. "1" oder "2"
+                    std::string prefix = filenameP.substr(0, underscorePos + 1);  // e.g. "A02_"
+                    std::string number_str = filenameP.substr(underscorePos + 1); // e.g. "1" or "2"
 
                     if (number_str == "1")
                     {
-                        // Speichere den kompletten Pfad als std::string
                         _correspondingImages[prefix].first = current_path.string();
                     }
                     else if (number_str == "2")
                     {
-                        // Speichere den kompletten Pfad als std::string
                         _correspondingImages[prefix].second = current_path.string();
                     }
                     else
                     {
                         std::cerr << "ERROR: Invalid filename number part (not '1' or '2'): " << current_path << std::endl;
-                        continue; // Diesen Eintrag überspringen
+                        continue;
                     }
                 }
                 else
