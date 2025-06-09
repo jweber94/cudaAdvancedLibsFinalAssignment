@@ -2,6 +2,8 @@
 
 #include <iostream>
 #include <string>
+#include <vector>
+#include <fstream>
 
 #include <cufft.h>
 
@@ -15,6 +17,23 @@
 // forward declaration of the calculation kernel
 __global__ void crossCorrelationKernel(cufftComplex *F1_gpu, cufftComplex *F2_gpu, cufftComplex *P_gpu, int rows, int complex_output_cols);
 __global__ void scale_kernel(float *data, int num_elements, float scale_factor);
+
+struct ProcessingResult {
+    std::string path1;
+    std::string path2;
+    int xShift;
+    int yShift;
+    double peakIntensitiy;
+
+    // Constructor needed for efficient emplacement later on - POD structs are not eligible to be used with C++11 emplace_back
+    ProcessingResult(std::string p1, std::string p2, int xS, int yS, double pI)
+        : path1(std::move(p1)), // std::move für std::string Parameter, um Kopien zu vermeiden
+          path2(std::move(p2)),
+          xShift(xS),
+          yShift(yS),
+          peakIntensitiy(pI)
+    {}
+};
 
 class ImageProcessor
 {
@@ -30,9 +49,22 @@ public:
         }
         std::cout << "Devices Found - count is: " << m_deviceCount << " using device No. 0" << std::endl;
         cudaSetDevice(0);
+        m_calculationResults.reserve(100); // make the vector big enough for a small dataset to avoid unneeded reallocation and copying of memory chunks during runtime
     }
 
-    bool processImage(const std::string &pathToImg1, const std::string &pathToImg2)
+    ~ImageProcessor() {
+        // Save result to file
+        std::string retPath = m_outputFolder + "crosspowerspectral_shift_results.csv";
+        std::ofstream oss(retPath);
+        std::size_t counter{0};
+        for (auto &it : m_calculationResults)
+        {
+            oss << counter++ << "," << it.path1 << "," << it.path2 << "," << it.xShift << "," << it.yShift << "," << it.peakIntensitiy << std::endl;
+        }
+        oss.close();
+    }
+
+    bool processImage(std::string &pathToImg1, std::string &pathToImg2)
     {
         // read image to RAM
         cv::Mat img1 = readImage(pathToImg1);
@@ -111,14 +143,17 @@ public:
         int shift_x = peakLoc.x - cx;
         int shift_y = peakLoc.y - cy;
 
+        // print results to terminal
         std::cout << "\n----------------------------------------" << std::endl;
         std::cout << "Displacement of " << pathToImg1 << " (dx, dy) is: (" << shift_x << ", " << shift_y << ") pixel" << std::endl;
         saveCorrelationResultAsImage(shifted_correlation_mat, img1.rows, img1.cols, pathToImg1);
         std::cout << "----------------------------------------" << std::endl;
-        
+        // save results to write them to disk later
+        m_calculationResults.emplace_back(pathToImg1, pathToImg2, shift_x, shift_y, max_val_double);
+
         // Free memory on GPU
         if (nullptr != pImgGPU1)
-                cudaFree(pImgGPU1);
+            cudaFree(pImgGPU1);
         if (nullptr != pImgGPU2)
             cudaFree(pImgGPU2);
         if (nullptr != pCrossCorrellationMatrix)
@@ -365,4 +400,5 @@ private:
 
     std::string m_outputFolder;
     int m_deviceCount{0};
+    std::vector<ProcessingResult> m_calculationResults;
 };
